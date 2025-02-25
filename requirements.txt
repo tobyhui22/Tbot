@@ -1,0 +1,9 @@
+flask
+python-dotenv
+openai
+aiohttp
+requests
+langchain
+chromadb
+pypdf
+sentence-transformers
