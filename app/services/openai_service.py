@@ -20,14 +20,41 @@ def upload_file(path):
 
 def create_assistant(file):
     """
-    You currently cannot set the temperature for Assistant via the API.
+    Create a CookingPapa assistant with specific personality and knowledge.
     """
     assistant = client.beta.assistants.create(
-        name="WhatsApp AirBnb Assistant",
-        instructions="You're a helpful WhatsApp assistant that can assist guests that are staying in our Paris AirBnb. Use your knowledge base to best respond to customer queries. If you don't know the answer, say simply that you cannot help with question and advice to contact the host directly. Be friendly and funny.",
+        name="CookingPapa WhatsApp Assistant",
+        instructions="""你是 CookingPapa，一個專業的廚藝助手機器人。
+
+        身份設定：
+        - 名字：CookingPapa
+        - 角色：廚藝助手
+        - 語言：主要使用粵語回應
+        - 性格：友善、專業、有耐性、熱愛烹飪
+
+        回應準則：
+        1. 自稱「我」或「CookingPapa」
+        2. 保持友善和專業態度
+        3. 專注於提供烹飪相關的建議和幫助
+        4. 使用粵語對話
+
+        標準回應：
+        - 初次見面：「你好！我係 CookingPapa，您嘅智能廚藝助手！有咩可以幫到你？」
+        - 身份詢問：「我係 CookingPapa，專門為大家提供廚藝指導嘅智能助手！」
+        - 不懂回答：「唔好意思，呢個問題我可能冇辦法答到，不如問下我煮嘢食嘅問題啦！」
+        - 收到讚美：「多謝讚賞！為您提供廚藝支援係我嘅榮幸！」
+
+        專業範疇：
+        - 食譜分享和教學
+        - 烹飪技巧指導
+        - 食材知識解答
+        - 廚具使用建議
+        - 餐單規劃建議
+
+        如果遇到非廚藝相關問題，應該禮貌地表示這不是專業範圍，並引導用戶詢問烹飪相關問題。""",
         tools=[{"type": "retrieval"}],
         model="gpt-4-1106-preview",
-        file_ids=[file.id],
+        file_ids=[file.id] if file else []
     )
     return assistant
 
@@ -44,28 +71,41 @@ def store_thread(wa_id, thread_id):
 
 
 def run_assistant(thread, name):
-    # Retrieve the Assistant
-    assistant = client.beta.assistants.retrieve(OPENAI_ASSISTANT_ID)
+    try:
+        # Retrieve the Assistant
+        assistant = client.beta.assistants.retrieve(OPENAI_ASSISTANT_ID)
 
-    # Run the assistant
-    run = client.beta.threads.runs.create(
-        thread_id=thread.id,
-        assistant_id=assistant.id,
-        # instructions=f"You are having a conversation with {name}",
-    )
+        # Run the assistant
+        run = client.beta.threads.runs.create(
+            thread_id=thread.id,
+            assistant_id=assistant.id,
+        )
 
-    # Wait for completion
-    # https://platform.openai.com/docs/assistants/how-it-works/runs-and-run-steps#:~:text=under%20failed_at.-,Polling%20for%20updates,-In%20order%20to
-    while run.status != "completed":
-        # Be nice to the API
-        time.sleep(0.5)
-        run = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
+        # Wait for completion
+        while True:
+            run = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
+            if run.status == "completed":
+                break
+            elif run.status == "failed":
+                logging.error(f"Assistant run failed: {run.last_error}")
+                return "唔好意思，我暫時回應唔到，請稍後再試。"
+            elif run.status == "expired":
+                logging.error("Assistant run expired")
+                return "唔好意思，回應時間過長，請重新發送你嘅問題。"
+            time.sleep(1)
 
-    # Retrieve the Messages
-    messages = client.beta.threads.messages.list(thread_id=thread.id)
-    new_message = messages.data[0].content[0].text.value
-    logging.info(f"Generated message: {new_message}")
-    return new_message
+        # Retrieve the Messages
+        messages = client.beta.threads.messages.list(thread_id=thread.id)
+        if messages.data:
+            new_message = messages.data[0].content[0].text.value
+            logging.info(f"Generated message: {new_message}")
+            return new_message
+        else:
+            return "唔好意思，我暫時回應唔到，請稍後再試。"
+            
+    except Exception as e:
+        logging.error(f"Error in run_assistant: {str(e)}")
+        return "唔好意思，系統發生錯誤，請稍後再試。"
 
 
 def generate_response(message_body, wa_id, name):

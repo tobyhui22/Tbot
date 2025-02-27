@@ -1,8 +1,6 @@
 import os
 from dotenv import load_dotenv
-from document_processor.pdf_loader import DocumentProcessor
-from document_processor.embeddings import EmbeddingGenerator
-from vector_store.chroma_db import VectorStore
+from rag.document_processor import DocumentProcessor
 import logging
 
 # 設置日誌
@@ -14,32 +12,35 @@ def init_vector_database():
     load_dotenv()
     
     try:
-        # 初始化處理器
+        # 初始化文檔處理器
         doc_processor = DocumentProcessor()
-        embedding_gen = EmbeddingGenerator()
-        vector_store = VectorStore()
         
         # 獲取PDF路徑
         pdf_path = os.getenv('PDF_SOURCE_PATH')
-        
+        if not pdf_path:
+            logger.error("PDF_SOURCE_PATH 未在 .env 中設置")
+            return
+            
         logger.info(f"開始處理PDF文件: {pdf_path}")
         
-        # 加載和分割文檔
-        documents = doc_processor.load_pdf(pdf_path)
-        logger.info(f"文檔分割完成，共 {len(documents)} 個片段")
+        # 提取文本
+        paragraphs = doc_processor.extract_text_from_pdf(pdf_path)
+        if not paragraphs:
+            logger.error("無法從PDF中提取文本")
+            return
+            
+        logger.info(f"成功提取 {len(paragraphs)} 個段落")
         
-        # 生成嵌入
-        texts = [doc.page_content for doc in documents]
-        embeddings = embedding_gen.generate_embeddings(texts)
-        logger.info("嵌入向量生成完成")
-        
-        # 存儲到向量數據庫
-        vector_store.store_embeddings(
-            collection_name="airbnb_faq",
-            documents=documents,
-            embeddings=embeddings
+        # 創建向量數據庫
+        success = doc_processor.create_or_update_collection(
+            collection_name="restaurant_info",
+            documents=paragraphs
         )
-        logger.info("向量數據庫創建成功")
+        
+        if success:
+            logger.info("向量數據庫創建成功")
+        else:
+            logger.error("向量數據庫創建失敗")
         
     except Exception as e:
         logger.error(f"初始化過程出錯: {str(e)}")

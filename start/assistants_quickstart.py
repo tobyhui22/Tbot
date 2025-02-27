@@ -3,6 +3,7 @@ import shelve
 from dotenv import load_dotenv
 import os
 import time
+from whatsapp_bot.python-whatsapp-bot.rag.document_processor import DocumentProcessor
 
 load_dotenv()
 OPEN_AI_API_KEY = os.getenv("OPEN_AI_API_KEY")
@@ -58,26 +59,25 @@ def store_thread(wa_id, thread_id):
 # Generate response
 # --------------------------------------------------------------
 def generate_response(message_body, wa_id, name):
-    # Check if there is already a thread_id for the wa_id
+    doc_processor = DocumentProcessor()
+    
+    # 從向量數據庫獲取相關內容
+    relevant_docs = doc_processor.query_documents(message_body)
+    
+    # 構建提示詞
+    context = "\n".join([doc for doc in relevant_docs["documents"][0]]) if relevant_docs else ""
+    
     thread_id = check_if_thread_exists(wa_id)
-
-    # If a thread doesn't exist, create one and store it
     if thread_id is None:
-        print(f"Creating new thread for {name} with wa_id {wa_id}")
         thread = client.beta.threads.create()
-        store_thread(wa_id, thread.id)
         thread_id = thread.id
-
-    # Otherwise, retrieve the existing thread
-    else:
-        print(f"Retrieving existing thread for {name} with wa_id {wa_id}")
-        thread = client.beta.threads.retrieve(thread_id)
-
-    # Add message to thread
+        store_thread(wa_id, thread_id)
+    
+    # 添加用戶消息，包含檢索到的上下文
     message = client.beta.threads.messages.create(
         thread_id=thread_id,
         role="user",
-        content=message_body,
+        content=f"Context: {context}\n\nQuestion: {message_body}"
     )
 
     # Run the assistant and get the new message
